@@ -1,10 +1,9 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.nio.charset.StandardCharsets;
+import java.sql.*;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.UUID;
 
 import inf226.storage.*;
@@ -38,7 +37,7 @@ public final class AccountStorage
         this.channelStore = channelStore;
         
         connection.createStatement()
-                .executeUpdate("CREATE TABLE IF NOT EXISTS Account (id TEXT PRIMARY KEY, version TEXT, user TEXT, password TEXT, FOREIGN KEY(user) REFERENCES User(id) ON DELETE CASCADE)");
+                .executeUpdate("CREATE TABLE IF NOT EXISTS Account (id TEXT PRIMARY KEY, version TEXT, user TEXT, password VARBINARY(8000), salt VARBINARY(8000), FOREIGN KEY(user) REFERENCES User(id) ON DELETE CASCADE)");
         connection.createStatement()
                 .executeUpdate("CREATE TABLE IF NOT EXISTS AccountChannel (account TEXT, channel TEXT, alias TEXT, ordinal INTEGER, PRIMARY KEY(account,channel), FOREIGN KEY(account) REFERENCES Account(id) ON DELETE CASCADE, FOREIGN KEY(channel) REFERENCES Channel(id) ON DELETE CASCADE)");
     }
@@ -48,12 +47,17 @@ public final class AccountStorage
       throws SQLException {
         
         final Stored<Account> stored = new Stored<Account>(account);
-        String sql = 
-           "INSERT INTO Account VALUES('" + stored.identity + "','"
-                                          + stored.version  + "','"
-                                          + account.user.identity + "','"
-                                          + account.password + "')";
-        connection.createStatement().executeUpdate(sql);
+
+        String sql = "INSERT INTO Account VALUES(?,?,?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, account.user.identity);
+        preparedStatement.setBytes(4,account.password);
+        preparedStatement.setBytes(5,account.salt);
+
+        preparedStatement.executeUpdate();
+
         
         // Write the list of channels
         final Maybe.Builder<SQLException> exception = Maybe.builder();
@@ -135,7 +139,7 @@ public final class AccountStorage
       throws DeletedException,
              SQLException {
 
-        final String accountsql = "SELECT version,user,password FROM Account WHERE id = '" + id.toString() + "'";
+        final String accountsql = "SELECT version,user,password,salt FROM Account WHERE id = '" + id.toString() + "'";
         final String channelsql = "SELECT channel,alias,ordinal FROM AccountChannel WHERE account = '" + id.toString() + "' ORDER BY ordinal DESC";
 
         final Statement accountStatement = connection.createStatement();
@@ -148,8 +152,10 @@ public final class AccountStorage
             final UUID version = UUID.fromString(accountResult.getString("version"));
             final UUID userid =
             UUID.fromString(accountResult.getString("user"));
-            final String password =
-            accountResult.getString("password");
+            final byte[] password =
+            accountResult.getBytes("password");
+            final byte[] salt =
+                    accountResult.getBytes("salt");
             final Stored<User> user = userStore.get(userid);
             // Get all the channels associated with this account
             final List.Builder<Pair<String,Stored<Channel>>> channels = List.builder();
@@ -161,7 +167,7 @@ public final class AccountStorage
                     new Pair<String,Stored<Channel>>(
                         alias,channelStore.get(channelId)));
             }
-            return (new Stored<Account>(new Account(user,channels.getList(),password),id,version));
+            return (new Stored<Account>(new Account(user,channels.getList(),password, salt),id,version));
         } else {
             throw new DeletedException();
         }

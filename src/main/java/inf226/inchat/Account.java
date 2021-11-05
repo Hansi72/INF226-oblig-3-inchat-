@@ -2,6 +2,13 @@ package inf226.inchat;
 import inf226.util.immutable.List;
 import inf226.util.Pair;
 
+import com.lambdaworks.crypto.SCrypt;
+
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.util.Arrays;
 
 import inf226.storage.*;
 
@@ -16,14 +23,16 @@ public final class Account {
      */
     public final Stored<User> user;
     public final List<Pair<String,Stored<Channel>>> channels;
-    public final String password;
-    
+    public final byte[] password;
+    public final byte[] salt;
+
     public Account(final Stored<User> user,
                    final List<Pair<String,Stored<Channel>>> channels,
-                   final String password) {
+                   final byte[] password, final byte[] salt) {
         this.user = user;
         this.channels = channels;
         this.password = password;
+        this.salt = salt;
     }
     
     /**
@@ -34,13 +43,24 @@ public final class Account {
      **/
     public static Account create(final Stored<User> user,
                                  final String password) {
-        return new Account(user,List.empty(), password);
+        SecureRandom rand = new SecureRandom();
+        byte salt[] = new byte[32];
+        rand.nextBytes(salt);
+        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
+        SCrypt scrypt = new SCrypt();
+        try {
+            byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);
+            return new Account(user,List.empty(), hashedPassword, salt);
+        } catch (GeneralSecurityException err) {
+            //todo
+        }
+            return null; //todo hva er konsekvensene av denne?
     }
     
     /**
      * Join a channel with this account.
      *
-     * @return A new account object with the cannnel added.
+     * @return A new account object with the channel added.
      */
     public Account joinChannel(final String alias,
                                final Stored<Channel> channel) {
@@ -50,7 +70,7 @@ public final class Account {
                 (user,
                  List.cons(entry,
                            channels),
-                 password);
+                 password, salt);
     }
 
 
@@ -61,8 +81,22 @@ public final class Account {
      * @return true if password matches.
      */
     public boolean checkPassword(String password) {
-        return this.password.equals(password);
+        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
+        try {
+            byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);
+            return Arrays.equals(this.password, hashedPassword);
+        } catch (GeneralSecurityException err) {
+            //todo
+        }
+
+
+
+
+
+        return false;
     }
-    
+
+
+
     
 }

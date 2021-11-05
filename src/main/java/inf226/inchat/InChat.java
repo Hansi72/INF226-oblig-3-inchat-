@@ -1,9 +1,13 @@
 package inf226.inchat;
 
+import com.lambdaworks.crypto.SCrypt;
 import inf226.storage.*;
 import inf226.util.Maybe;
 import inf226.util.Util;
 
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
 import java.util.TreeMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -90,9 +94,9 @@ public class InChat {
             final Stored<Session> session =
                 sessionStore.save(new Session(account, Instant.now().plusSeconds(60*60*24)));
             // Check that password is not incorrect and not too long.
-            if (!(!account.value.password.equals(password) && !(password.length() > 1000))) {
-                result.accept(session);
-            }
+                 if (account.value.checkPassword(password) && !(password.length() > 1000)) {
+                     result.accept(session);
+             }
         });
     }
     
