@@ -33,7 +33,7 @@ public final class UserStorage
         final Stored<User> stored = new Stored<User>(user);
         String sql =  "INSERT INTO User VALUES('" + stored.identity + "','"
                                                   + stored.version  + "','"
-                                                  + user.name  + "','"
+                                                  + user.name.getUserName()  + "','"
                                                   + user.joined.toString() + "')";
         connection.createStatement().executeUpdate(sql);
         return stored;

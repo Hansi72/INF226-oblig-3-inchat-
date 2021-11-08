@@ -32,8 +32,8 @@ public class InchatTest{
         connection.setAutoCommit(false);
         InChat inchat = new InChat(userStore,channelStore,accountStore,sessionStore,connection);
         Stored<Session> aliceSession = inchat.register("Alice","badpassword").get();
-        inchat.register("Bob","worse").get();
-        Stored<Session> bobSession = inchat.login("Bob","worse").get();
+        inchat.register("Bob","worse123").get();
+        Stored<Session> bobSession = inchat.login("Bob","worse123").get();
         Stored<Channel> channel = inchat.createChannel(aliceSession.value.account,"Awesome").get();
         inchat.postMessage(aliceSession.value.account,channel, "Test message.").get();
         inchat.joinChannel(bobSession.value.account,channel.identity).get();

@@ -99,7 +99,7 @@ public class Handler extends AbstractHandler
             System.err.println("Registering user: \"" + username
                              + "\" with password \"" + password + "\"");
             
-                              
+
             inchat.register(username,password).forEach(sessionBuilder);
         } catch (Maybe.NothingException e) {
             // Not enough data suppied for login
@@ -137,8 +137,11 @@ public class Handler extends AbstractHandler
         final Stored<Account> account = session.value.account;
         // User is now logged in with a valid sesion.
         // We set the session cookie to keep the user logged in:
-        response.addCookie(new Cookie("session",session.identity.toString()));
-        
+        Cookie cookie = new Cookie("session",session.identity.toString());
+        cookie.setHttpOnly(true);
+        response.addCookie(cookie);
+
+
         final PrintWriter out = response.getWriter();
         // Handle a logged in request.
         try {

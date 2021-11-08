@@ -3,8 +3,6 @@ import inf226.util.immutable.List;
 import inf226.util.Pair;
 
 import com.lambdaworks.crypto.SCrypt;
-
-import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -23,12 +21,12 @@ public final class Account {
      */
     public final Stored<User> user;
     public final List<Pair<String,Stored<Channel>>> channels;
-    public final byte[] password;
+    public final Password password;
     public final byte[] salt;
 
     public Account(final Stored<User> user,
                    final List<Pair<String,Stored<Channel>>> channels,
-                   final byte[] password, final byte[] salt) {
+                   final Password password, final byte[] salt) {
         this.user = user;
         this.channels = channels;
         this.password = password;
@@ -42,19 +40,13 @@ public final class Account {
      * @param password The login password for this account.
      **/
     public static Account create(final Stored<User> user,
-                                 final String password) {
+                                 final String password){
         SecureRandom rand = new SecureRandom();
         byte salt[] = new byte[32];
         rand.nextBytes(salt);
-        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
-        SCrypt scrypt = new SCrypt();
-        try {
-            byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);
-            return new Account(user,List.empty(), hashedPassword, salt);
-        } catch (GeneralSecurityException err) {
-            //todo
-        }
-            return null; //todo hva er konsekvensene av denne?
+            Password passwordObj = new Password(password, salt, user.value.name.getUserName());
+            return new Account(user, List.empty(), passwordObj, salt);
+
     }
     
     /**
@@ -84,15 +76,14 @@ public final class Account {
         byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
         try {
             byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);
-            return Arrays.equals(this.password, hashedPassword);
+            //fixme, quickfix to ignore null passwords because of incomplete code in Password class.
+            if(password == null){
+                return false;
+            }
+            return Arrays.equals(hashedPassword, this.password.getPassword());
         } catch (GeneralSecurityException err) {
             //todo
         }
-
-
-
-
-
         return false;
     }
 

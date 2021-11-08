@@ -1,9 +1,8 @@
 package inf226.inchat;
 
-import java.nio.charset.StandardCharsets;
+
+import java.io.*;
 import java.sql.*;
-import java.time.Instant;
-import java.util.Arrays;
 import java.util.UUID;
 
 import inf226.storage.*;
@@ -45,18 +44,31 @@ public final class AccountStorage
     @Override
     public Stored<Account> save(Account account)
       throws SQLException {
-        
         final Stored<Account> stored = new Stored<Account>(account);
+
+        //serialization of password object
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        ObjectOutputStream objStream;
+        byte[] passAsBytes;
+            try {
+            objStream = new ObjectOutputStream(byteStream);
+            objStream.writeObject(account.password);
+            passAsBytes = byteStream.toByteArray();
+        }catch (IOException ioException) {
+            ioException.printStackTrace();
+            passAsBytes = null;
+        }
 
         String sql = "INSERT INTO Account VALUES(?,?,?,?,?)";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setObject(1,stored.identity);
         preparedStatement.setObject(2, stored.version);
         preparedStatement.setObject(3, account.user.identity);
-        preparedStatement.setBytes(4,account.password);
+        preparedStatement.setBytes(4, passAsBytes);
         preparedStatement.setBytes(5,account.salt);
-
         preparedStatement.executeUpdate();
+
+
 
         
         // Write the list of channels
@@ -154,6 +166,17 @@ public final class AccountStorage
             UUID.fromString(accountResult.getString("user"));
             final byte[] password =
             accountResult.getBytes("password");
+            //deserialize password object
+            ByteArrayInputStream byteStream = new ByteArrayInputStream(password);
+            ObjectInput objIn;
+            Password passAsObj;
+            try{
+                objIn = new ObjectInputStream(byteStream);
+                passAsObj = (Password) objIn.readObject();
+            } catch (IOException | ClassNotFoundException ioException) {
+                ioException.printStackTrace();
+                passAsObj = null;
+            }
             final byte[] salt =
                     accountResult.getBytes("salt");
             final Stored<User> user = userStore.get(userid);
@@ -167,7 +190,8 @@ public final class AccountStorage
                     new Pair<String,Stored<Channel>>(
                         alias,channelStore.get(channelId)));
             }
-            return (new Stored<Account>(new Account(user,channels.getList(),password, salt),id,version));
+
+            return (new Stored<Account>(new Account(user,channels.getList(),passAsObj, salt),id,version));
         } else {
             throw new DeletedException();
         }

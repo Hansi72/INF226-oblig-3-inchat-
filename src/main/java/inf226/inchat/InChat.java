@@ -1,13 +1,10 @@
 package inf226.inchat;
 
-import com.lambdaworks.crypto.SCrypt;
+
 import inf226.storage.*;
 import inf226.util.Maybe;
 import inf226.util.Util;
 
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.util.TreeMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -57,7 +54,7 @@ public class InChat {
      */
     @FunctionalInterface
     private interface Operation<T,E extends Throwable> {
-        void run(final Consumer<T> result) throws E,DeletedException;
+        void run(final Consumer<T> result) throws E, DeletedException;
     }
     /**
      * Execute an operation atomically in SQL.
@@ -104,16 +101,18 @@ public class InChat {
      * Register a new user.
      */
     public Maybe<Stored<Session>> register(final String username,
-                                           final String password) {
-        return atomic(result -> {
-            final Stored<User> user =
-                userStore.save(User.create(username));
-            final Stored<Account> account =
-                accountStore.save(Account.create(user, password));
-            final Stored<Session> session =
-                sessionStore.save(new Session(account, Instant.now().plusSeconds(60*60*24)));
-            result.accept(session); 
-        });
+                                           final String password){
+
+                return atomic(result -> {
+                    final Stored<User> user =
+                            userStore.save(User.create(username));
+                    final Stored<Account> account =
+                            accountStore.save(Account.create(user, password));
+                    final Stored<Session> session =
+                            sessionStore.save(new Session(account, Instant.now().plusSeconds(60 * 60 * 24)));
+                    result.accept(session);
+                });
+
     }
     
     /**
@@ -160,7 +159,7 @@ public class InChat {
                 = channelStore.eventStore.save(
                     Channel.Event.createJoinEvent(channelID,
                         Instant.now(),
-                        account.value.user.value.name));
+                        account.value.user.value.name.getUserName()));
             result.accept(
                 Util.updateSingle(channel,
                                   channelStore,
@@ -178,7 +177,7 @@ public class InChat {
             Stored<Channel.Event> event
                 = channelStore.eventStore.save(
                     Channel.Event.createMessageEvent(channel.identity,Instant.now(),
-                        account.value.user.value.name, message));
+                        account.value.user.value.name.getUserName(), message));
             result.accept (
                 Util.updateSingle(channel,
                                     channelStore,
