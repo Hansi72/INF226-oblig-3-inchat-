@@ -13,7 +13,7 @@ public final class Password implements Serializable {
         validate(password, userName); //todo handle error
         SCrypt scrypt = new SCrypt();
 
-        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
+        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
         byte[] tempPassword;
         try {
             byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);

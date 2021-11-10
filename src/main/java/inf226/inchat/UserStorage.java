@@ -33,7 +33,7 @@ public final class UserStorage
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setObject(1,stored.identity);
         preparedStatement.setObject(2, stored.version);
-        preparedStatement.setObject(3, user.name.getUserName());
+        preparedStatement.setString(3, user.name.getUserName());
         preparedStatement.setString(4, user.joined.toString());
         preparedStatement.executeUpdate();
 

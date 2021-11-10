@@ -73,7 +73,7 @@ public final class Account {
      * @return true if password matches.
      */
     public boolean checkPassword(String password) {
-        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_16);
+        byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
         try {
             byte[] hashedPassword = SCrypt.scrypt(passwordBytes, salt, 16384, 16, 1, 256);
             //fixme, quickfix to ignore null passwords because of incomplete code in Password class.

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="encoder-1.2.3">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/src/main/java/inf226/util/encoder-1.2.3.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

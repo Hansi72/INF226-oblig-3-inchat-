@@ -51,13 +51,21 @@ public final class AccountStorage
         ObjectOutputStream objStream;
         byte[] passAsBytes;
             try {
-            objStream = new ObjectOutputStream(byteStream);
-            objStream.writeObject(account.password);
-            passAsBytes = byteStream.toByteArray();
-        }catch (IOException ioException) {
-            ioException.printStackTrace();
-            passAsBytes = null;
-        }
+                objStream = new ObjectOutputStream(byteStream);
+                objStream.writeObject(account.password);
+                objStream.flush();
+                passAsBytes = byteStream.toByteArray();
+            }catch(IOException ioException){
+                ioException.printStackTrace();
+                passAsBytes = null;
+            } finally {
+                try {
+                    byteStream.close();
+                } catch (IOException ioException) {
+                    ioException.printStackTrace();
+
+                }
+            }
 
         String sql = "INSERT INTO Account VALUES(?,?,?,?,?)";
         PreparedStatement preparedStatement = connection.prepareStatement(sql);
@@ -172,13 +180,16 @@ public final class AccountStorage
             accountResult.getBytes("password");
             //deserialize password object
             ByteArrayInputStream byteStream = new ByteArrayInputStream(password);
+
             ObjectInput objIn;
-            Password passAsObj;
+            Object passAsObj;
             try{
                 objIn = new ObjectInputStream(byteStream);
-                passAsObj = (Password) objIn.readObject();
+                passAsObj = objIn.readObject();
             } catch (IOException | ClassNotFoundException ioException) {
+                System.err.println("erroren er heer 1");
                 ioException.printStackTrace();
+                System.err.println("erroren er heer 1");
                 passAsObj = null;
             }
             final byte[] salt =
@@ -195,7 +206,7 @@ public final class AccountStorage
                         alias,channelStore.get(channelId)));
             }
 
-            return (new Stored<Account>(new Account(user,channels.getList(),passAsObj, salt),id,version));
+            return (new Stored<Account>(new Account(user,channels.getList(),(Password)passAsObj, salt),id,version));
         } else {
             throw new DeletedException();
         }
