@@ -1,9 +1,6 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -35,25 +32,32 @@ public final class EventStorage
       throws SQLException {
         
         final Stored<Channel.Event> stored = new Stored<Channel.Event>(event);
-        
-        String sql =  "INSERT INTO Event VALUES('" + stored.identity + "','"
-                                                  + stored.version  + "','"
-                                                  + event.channel + "','"
-                                                  + event.type.code + "','"
-                                                  + event.time  + "')";
-        connection.createStatement().executeUpdate(sql);
+
+        String sql = "INSERT INTO Event VALUES(?,?,?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, event.channel);
+        preparedStatement.setObject(4, event.type.code);
+        preparedStatement.setObject(5, event.time);
+        preparedStatement.executeUpdate();
+
         switch (event.type) {
             case message:
-                sql = "INSERT INTO Message VALUES('" + stored.identity + "','"
-                                                     + event.sender + "','"
-                                                     + event.message +"')";
+                sql = "INSERT INTO Message VALUES(?,?,?)";
+                preparedStatement = connection.prepareStatement(sql);
+                preparedStatement.setObject(1,stored.identity);
+                preparedStatement.setObject(2, event.sender);
+                preparedStatement.setObject(3, event.message);
                 break;
             case join:
-                sql = "INSERT INTO Joined VALUES('" + stored.identity + "','"
-                                                  + event.sender +"')";
+                sql = "INSERT INTO Joined VALUES(?,?)";
+                preparedStatement = connection.prepareStatement(sql);
+                preparedStatement.setObject(1, stored.identity);
+                preparedStatement.setObject(2, event.sender);
                 break;
         }
-        connection.createStatement().executeUpdate(sql);
+        preparedStatement.executeUpdate();
         return stored;
     }
     
@@ -66,21 +70,30 @@ public final class EventStorage
     final Stored<Channel.Event> current = get(event.identity);
     final Stored<Channel.Event> updated = current.newVersion(new_event);
     if(current.version.equals(event.version)) {
-        String sql = "UPDATE Event SET" +
-            " (version,channel,time,type) =('" 
-                            + updated.version  + "','"
-                            + new_event.channel  + "','"
-                            + new_event.time  + "','"
-                            + new_event.type.code
-                            + "') WHERE id='"+ updated.identity + "'";
-        connection.createStatement().executeUpdate(sql);
+        String sql = "UPDATE Event SET(version,channel,time,type) WHERE id=?";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1, updated.version);
+        preparedStatement.setObject(2, new_event.channel);
+        preparedStatement.setObject(3, new_event.time);
+        preparedStatement.setObject(4, new_event.type.code);
+        preparedStatement.setObject(5, updated.identity);
+        preparedStatement.executeUpdate();
+
         switch (new_event.type) {
             case message:
-                sql = "UPDATE Message SET (sender,content)=('" + new_event.sender + "','"
-                                                     + new_event.message +"') WHERE id='"+ updated.identity + "'";
+                sql = "UPDATE Message SET(?,?) WHERE id=?";
+                preparedStatement = connection.prepareStatement(sql);
+                preparedStatement.setObject(1, new_event.sender);
+                preparedStatement.setObject(2, new_event.message);
+                preparedStatement.setObject(3, updated.identity);
+
                 break;
             case join:
-                sql = "UPDATE Joined SET (sender)=('" + new_event.sender +"') WHERE id='"+ updated.identity + "'";
+                sql = "UPDATE Joined SET(?) WHERE id=?";
+                preparedStatement = connection.prepareStatement(sql);
+                preparedStatement.setObject(1, new_event.sender);
+                preparedStatement.setObject(2, updated.identity);
+
                 break;
         }
         connection.createStatement().executeUpdate(sql);

@@ -1,9 +1,6 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.TreeMap;
@@ -43,10 +40,13 @@ public final class ChannelStorage
       throws SQLException {
         
         final Stored<Channel> stored = new Stored<Channel>(channel);
-        String sql =  "INSERT INTO Channel VALUES('" + stored.identity + "','"
-                                                  + stored.version  + "','"
-                                                  + channel.name  + "')";
-        connection.createStatement().executeUpdate(sql);
+        String sql = "INSERT INTO Channel VALUES(?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1, stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, channel.name);
+        preparedStatement.executeUpdate();
+
         return stored;
     }
     
@@ -59,12 +59,13 @@ public final class ChannelStorage
         final Stored<Channel> current = get(channel.identity);
         final Stored<Channel> updated = current.newVersion(new_channel);
         if(current.version.equals(channel.version)) {
-            String sql = "UPDATE Channel SET" +
-                " (version,name) =('" 
-                                + updated.version  + "','"
-                                + new_channel.name
-                                + "') WHERE id='"+ updated.identity + "'";
-            connection.createStatement().executeUpdate(sql);
+            String sql = "UPDATE Channel SET(version, name)=(?,?) WHERE id=?";
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
+            preparedStatement.setObject(1, updated.version);
+            preparedStatement.setObject(2, new_channel.name);
+            preparedStatement.setObject(3, updated.identity);
+            preparedStatement.executeUpdate();
+
         } else {
             throw new UpdatedException(current);
         }

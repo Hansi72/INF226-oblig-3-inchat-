@@ -1,9 +1,6 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -32,11 +29,15 @@ public final class SessionStorage
       throws SQLException {
         
         final Stored<Session> stored = new Stored<Session>(session);
-        String sql =  "INSERT INTO Session VALUES('" + stored.identity + "','"
-                                                  + stored.version  + "','"
-                                                  + session.account.identity  + "','"
-                                                  + session.expiry.toString() + "')";
-        connection.createStatement().executeUpdate(sql);
+
+        String sql = "INSERT INTO Session VALUES(?,?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, session.account.identity);
+        preparedStatement.setString(4, session.expiry.toString());
+        preparedStatement.executeUpdate();
+
         return stored;
     }
     
@@ -49,13 +50,13 @@ public final class SessionStorage
     final Stored<Session> current = get(session.identity);
     final Stored<Session> updated = current.newVersion(new_session);
     if(current.version.equals(session.version)) {
-        String sql = "UPDATE Session SET" +
-            " (version,account,expiry) =('" 
-                            + updated.version  + "','"
-                            + new_session.account.identity  + "','"
-                            + new_session.expiry.toString()
-                            + "') WHERE id='"+ updated.identity + "'";
-        connection.createStatement().executeUpdate(sql);
+        String sql = "UPDATE Session SET(?,?,?) WHERE id= ?";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,updated.version);
+        preparedStatement.setObject(2, new_session.account.identity);
+        preparedStatement.setObject(3, new_session.expiry.toString());
+        preparedStatement.setObject(4, updated.identity);
+        preparedStatement.executeUpdate();
     } else {
         throw new UpdatedException(current);
     }

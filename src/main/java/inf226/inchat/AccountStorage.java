@@ -77,12 +77,16 @@ public final class AccountStorage
         account.channels.forEach(element -> {
             String alias = element.first;
             Stored<Channel> channel = element.second;
-            final String msql
-              = "INSERT INTO AccountChannel VALUES('" + stored.identity + "','"
-                                                      + channel.identity + "','"
-                                                      + alias + "','"
-                                                      + ordinal.get().toString() + "')";
-            try { connection.createStatement().executeUpdate(msql); }
+
+            final String msql = "INSERT INTO AccountChannel VALUES(?,?,?,?)";
+            try {
+                PreparedStatement mpreparedStatement = connection.prepareStatement(msql);
+                mpreparedStatement.setObject(1, stored.identity);
+                mpreparedStatement.setObject(2, channel.identity);
+                mpreparedStatement.setObject(3, alias);
+                mpreparedStatement.setString(4, ordinal.get().toString());
+                mpreparedStatement.executeUpdate();
+            }
             catch (SQLException e) { exception.accept(e) ; }
             ordinal.accept(ordinal.get() + 1);
         });
@@ -203,12 +207,13 @@ public final class AccountStorage
     public Stored<Account> lookup(String username)
       throws DeletedException,
              SQLException {
-        final String sql = "SELECT Account.id from Account INNER JOIN User ON user=User.id where User.name='" + username + "'";
-        
-        System.err.println(sql);
-        final Statement statement = connection.createStatement();
-        
-        final ResultSet rs = statement.executeQuery(sql);
+
+        final String sql = "SELECT Account.id from Account INNER JOIN User ON user=User.id where User.name=?";
+        final PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1, username);
+
+        System.err.println(sql + username);
+        final ResultSet rs = preparedStatement.executeQuery();
         if(rs.next()) {
             final UUID identity = 
                     UUID.fromString(rs.getString("id"));

@@ -5,7 +5,7 @@ import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 
-//todo do Serializables create a security risk?
+//todo do Serializables create a security risk when deserializing?
 public final class Password implements Serializable {
     private final byte[] password;
 
@@ -37,7 +37,7 @@ public final class Password implements Serializable {
         assert(!password.toLowerCase().contains(userName.toLowerCase()));
         assert(!password.toLowerCase().contains("inchat"));
         assert(!password.toLowerCase().contains("password"));
-        //todo legg til NIST restriksjoner her når du er sletn i hodet
+        //todo legg til flere NIST restriksjoner (eks: gjentagende tegn, og sjekk opp mot hashmap av 'dårlige' passord)
         return false;
     }
 }
