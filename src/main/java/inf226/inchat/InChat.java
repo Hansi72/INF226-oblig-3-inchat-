@@ -5,6 +5,7 @@ import inf226.storage.*;
 import inf226.util.Maybe;
 import inf226.util.Util;
 
+import java.util.HashMap;
 import java.util.TreeMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -28,7 +29,7 @@ public class InChat {
     private final Connection connection;
     private final UserStorage userStore;
     private final ChannelStorage channelStore;
-    private final EventStorage   eventStore;
+    private final EventStorage eventStore;
     private final AccountStorage accountStore;
     private final SessionStorage sessionStore;
     private final Map<UUID,List<Consumer<Channel.Event>>> eventCallbacks
@@ -46,6 +47,7 @@ public class InChat {
         this.sessionStore=sessionStore;
         this.connection=connection;
     }
+
 
     /**
      * An atomic operation in Inchat.
@@ -137,9 +139,11 @@ public class InChat {
      */
     public Maybe<Stored<Channel>> createChannel(Stored<Account> account,
                                                 String name) {
+        HashMap<String, String> roles = new HashMap();
+        roles.put(account.value.user.value.name.getUserName(), "owner");
         return atomic(result -> {
             Stored<Channel> channel
-                = channelStore.save(new Channel(name,List.empty()));
+                = channelStore.save(new Channel(name,List.empty(), roles));
             joinChannel(account, channel.identity);
             result.accept(channel);
         });
@@ -152,6 +156,14 @@ public class InChat {
                                               UUID channelID) {
         return atomic(result -> {
             Stored<Channel> channel = channelStore.get(channelID);
+            //quickfix sets user to participant if not already owner, banned or observer.
+            String currentRole = channel.value.roles.get(account.value.user.value.name.getUserName());
+            if(currentRole != null){
+            if(!(currentRole.equals("owner") || currentRole.equals("banned") || currentRole.equals("observer"))){
+                channel.value.roles.put(account.value.user.value.name.getUserName(), "participant");
+            }}else{
+                channel.value.roles.put(account.value.user.value.name.getUserName(), "participant");
+            }
             Util.updateSingle(account,
                               accountStore,
                               a -> a.value.joinChannel(channel.value.name,channel));
@@ -169,6 +181,7 @@ public class InChat {
     
     /**
      * Post a message to a channel.
+     * Permission handled in handler.
      */
     public Maybe<Stored<Channel>> postMessage(Stored<Account> account,
                                               Stored<Channel> channel,
@@ -210,7 +223,12 @@ public class InChat {
     /**
      * Delete an event.
      */
-    public Stored<Channel> deleteEvent(Stored<Channel> channel, Stored<Channel.Event> event) {
+    public Stored<Channel> deleteEvent(Stored<Channel> channel, Stored<Channel.Event> event, Stored<Account> account) {
+        String role = getRole(account.value.user.value.name.getUserName(), channel);
+        if(role.equals("owner") || role.equals("moderator")){
+         }else if(event.value.sender.equals(account.value.user.value.name.getUserName()) && role.equals("participant")){
+        }else{return channel;}
+
         return this.<Stored<Channel>>atomic(result -> {
             Util.deleteSingle(event , channelStore.eventStore);
             result.accept(channelStore.noChangeUpdate(channel.identity));
@@ -222,7 +240,12 @@ public class InChat {
      */
     public Stored<Channel> editMessage(Stored<Channel> channel,
                                        Stored<Channel.Event> event,
-                                       String newMessage) {
+                                       String newMessage, Stored<Account> account) {
+        String role = getRole(account.value.user.value.name.getUserName(), channel);
+        if(role.equals("owner") || role.equals("moderator")){
+        }else if(event.value.sender.equals(account.value.user.value.name.getUserName()) && role.equals("participant")){
+        }else{return channel;}
+
         return this.<Stored<Channel>>atomic(result -> {
             Util.updateSingle(event,
                             channelStore.eventStore,
@@ -230,6 +253,42 @@ public class InChat {
             result.accept(channelStore.noChangeUpdate(channel.identity));
         }).defaultValue(channel);
     }
+
+    //todo add atomic util.updateSingle here
+    public Stored<Channel> setRole(Stored<Account> account, Stored<Channel> channel, String targetUser, String role){
+        System.out.println("setrole start");
+        if(!(getRole(targetUser, channel).equals("owner"))){
+            System.out.println("taget is not owner");
+    if(getRole(account.value.user.value.name.getUserName(), channel).equals("owner")) {
+        System.out.println("setrole put: " +role + " on user " + targetUser);
+        channel.value.roles.put(targetUser, role);
+        return channel;
+    }
+        }
+    return channel;
+    }
+
+    //get role for given account channel pair.
+    public String getRole(String name, Stored<Channel> channel) {
+        if(channel.value.roles.get(name) != null){
+        return channel.value.roles.get(name);}
+        return "none";
+    }
+
+    public boolean canPost(Stored<Account> account, Stored<Channel> channel){
+        String role = getRole(account.value.user.value.name.getUserName(), channel);
+        if(role.equals("owner") || role.equals("moderator") || role.equals("participant")){
+            return true;
+        }else{return false;}
+    }
+
+    public boolean readPermission(Stored<Account> account, Stored<Channel> channel){
+        String role = getRole(account.value.user.value.name.getUserName(), channel);
+        if(role.equals("owner") || role.equals("moderator") || role.equals("participant") || role.equals("observer")){
+            return true;
+        }else{return false;}
+    }
+
 }
 
 

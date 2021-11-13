@@ -76,9 +76,6 @@ public final class AccountStorage
         preparedStatement.setBytes(5,account.salt);
         preparedStatement.executeUpdate();
 
-
-
-        
         // Write the list of channels
         final Maybe.Builder<SQLException> exception = Maybe.builder();
         final Mutable<Integer> ordinal = new Mutable<Integer>(0);
@@ -178,6 +175,7 @@ public final class AccountStorage
             UUID.fromString(accountResult.getString("user"));
             final byte[] password =
             accountResult.getBytes("password");
+
             //deserialize password object
             ByteArrayInputStream byteStream = new ByteArrayInputStream(password);
 
@@ -186,10 +184,9 @@ public final class AccountStorage
             try{
                 objIn = new ObjectInputStream(byteStream);
                 passAsObj = objIn.readObject();
+
             } catch (IOException | ClassNotFoundException ioException) {
-                System.err.println("erroren er heer 1");
                 ioException.printStackTrace();
-                System.err.println("erroren er heer 1");
                 passAsObj = null;
             }
             final byte[] salt =
@@ -223,7 +220,6 @@ public final class AccountStorage
         final PreparedStatement preparedStatement = connection.prepareStatement(sql);
         preparedStatement.setObject(1, username);
 
-        System.err.println(sql + username);
         final ResultSet rs = preparedStatement.executeQuery();
         if(rs.next()) {
             final UUID identity = 

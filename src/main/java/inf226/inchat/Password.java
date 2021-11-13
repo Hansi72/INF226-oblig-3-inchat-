@@ -10,8 +10,8 @@ public final class Password implements Serializable {
     private final byte[] password;
 
     public Password(final String password, final byte[] salt, String userName) {
-        validate(password, userName); //todo handle error
-        SCrypt scrypt = new SCrypt();
+        validate(password, userName); //todo handle error og implementer stopp invalid passord
+        System.out.println("");
 
         byte[] passwordBytes = password.getBytes(StandardCharsets.UTF_8);
         byte[] tempPassword;

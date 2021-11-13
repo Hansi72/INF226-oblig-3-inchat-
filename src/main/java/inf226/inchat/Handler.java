@@ -62,6 +62,7 @@ public class Handler extends AbstractHandler
                      HttpServletResponse response)
     throws IOException, ServletException
   {
+      int csrfToken = 0;
     System.err.println("Got a request for \"" + target + "\"");
     final Map<String,Cookie> cookies = getCookies(request);
 
@@ -85,7 +86,6 @@ public class Handler extends AbstractHandler
     }
     
     // Attempt to create a session
-    
     Maybe.Builder<Stored<Session>> sessionBuilder
         = new Maybe.Builder<Stored<Session>>();
         
@@ -117,7 +117,7 @@ public class Handler extends AbstractHandler
                 (request.getParameter("password"))).get();
             inchat.login(username,password).forEach(sessionBuilder);
         } catch (Maybe.NothingException e) {
-            // Not enough data suppied for login
+            // Not enough data supplied for login
             System.err.println("Broken usage of login");
         }
     
@@ -136,8 +136,9 @@ public class Handler extends AbstractHandler
     try {
         final Stored<Session> session = sessionBuilder.getMaybe().get();
         final Stored<Account> account = session.value.account;
-        // User is now logged in with a valid sesion.
+        // User is now logged in with a valid session.
         // We set the session cookie to keep the user logged in:
+        //todo lag anti-CSRF token her?
         Cookie cookie = new Cookie("session",session.identity.toString());
         cookie.setHttpOnly(true);
         response.addCookie(cookie);
@@ -154,19 +155,22 @@ public class Handler extends AbstractHandler
                 Stored<Channel> channel =
                     Util.lookup(account.value.channels,alias).get();
                 if(request.getMethod().equals("POST")) {
+                    //todo sjekk om anti-CSRF token stemmer her
+
                     // This is a request to post something in the channel.
                     
                     if(request.getParameter("newmessage") != null) {
                         String message = (new Maybe<String>
                             (request.getParameter("message"))).get();
-                        channel = inchat.postMessage(account,channel,message).get();
+                        if (inchat.canPost(account, channel)) {
+                            channel = inchat.postMessage(account, channel, message).get();
+                        }
                     }
-                    
                     if(request.getParameter("deletemessage") != null) {
                         UUID messageId = 
                             UUID.fromString(Maybe.just(request.getParameter("message")).get());
                         Stored<Channel.Event> message = inchat.getEvent(messageId).get();
-                        channel = inchat.deleteEvent(channel, message);
+                            channel = inchat.deleteEvent(channel, message, account);
                     }
                     if(request.getParameter("editmessage") != null) {
                         String message = (new Maybe<String>
@@ -174,30 +178,43 @@ public class Handler extends AbstractHandler
                         UUID messageId = 
                             UUID.fromString(Maybe.just(request.getParameter("message")).get());
                         Stored<Channel.Event> event = inchat.getEvent(messageId).get();
-                        channel = inchat.editMessage(channel, event, message);
+                            channel = inchat.editMessage(channel, event, message, account);
                     }
-                    
-                    // TODO: Handle requests to change user roles on channel.
+                    if(request.getParameter("setpermission") != null) {
+                        String user = (new Maybe<String>
+                                (request.getParameter("username"))).get();
+                        String role = (new Maybe<String>
+                                (request.getParameter("role"))).get();
+                            channel = inchat.setRole(account, channel, user, role);
+                    }
                     
                 }
 
-                out.println("<!DOCTYPE html>");
-                out.println("<html lang=\"en-GB\">");
-                printStandardHead(out, "inChat: " + alias);
-                out.println("<body>");
-                printStandardTop(out,  "inChat: " + alias);
-                out.println("<div class=\"main\">");
-                printChannelList(out, account.value, alias);
-                printChannel(out, channel, alias);
-                out.println("</div>");
-                out.println("</body>");
-                out.println("</html>");
-                response.setStatus(HttpServletResponse.SC_OK);
-                baseRequest.setHandled(true);
+                    out.println("<!DOCTYPE html>");
+                    out.println("<html lang=\"en-GB\">");
+                    printStandardHead(out, "inChat: " + alias);
+                    out.println("<body>");
+                    printStandardTop(out, "inChat: " + alias);
+                    out.println("<div class=\"main\">");
+                    printChannelList(out, account.value, alias);
+                    System.out.println("permission html: "+ channel.value.roles.get(account.value.user.value.name.getUserName()));
+                    if(inchat.readPermission(account, channel)) {
+                    printChannel(out, channel, alias);
+                    }else{
+                    out.println("<div class=\"main\">");
+                    out.println("You are banned from this channel.</div>");
+                    }
+                    out.println("</div>");
+                    out.println("</body>");
+                    out.println("</html>");
+                    response.setStatus(HttpServletResponse.SC_OK);
+                    baseRequest.setHandled(true);
+
                 return ;
             }
             
             if(target.startsWith("/create")) {
+                //todo sjekk om anti-CSRF token stemmer her
                 out.println("<!DOCTYPE html>");
                 out.println("<html lang=\"en-GB\">");
                 printStandardHead(out, "inChat: Create a new channel!");
@@ -225,6 +242,7 @@ public class Handler extends AbstractHandler
                 out.println("<form class=\"login\" action=\"/join\" method=\"POST\">"
                   + "<div class=\"name\"><input type=\"text\" name=\"channelid\" placeholder=\"Channel ID number:\"></div>"
                   + "<div class=\"submit\"><input type=\"submit\" name=\"joinchannel\" value=\"Join channel\"></div>"
+                  + "<input type=\"hidden\" name=\"csrf_token\" value="+csrfToken+"/>" //fixme test
                   + "</form>");
                 out.println("</body>");
                 out.println("</html>");

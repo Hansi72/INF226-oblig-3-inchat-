@@ -3,6 +3,7 @@ package inf226.inchat;
 import inf226.util.immutable.List;
 import inf226.storage.Stored;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.UUID;
 /**
  * The Channel class represents a channel.
@@ -10,20 +11,22 @@ import java.util.UUID;
 public final class Channel {
     public final String name;
     public final List<Stored<Event>> events;
-    
+    public final HashMap<String, String> roles;
+
     /**
      * Construct a Channel object from name and events.
      */
-    public Channel(String name, List<Stored<Event>> events) {
+    public Channel(String name, List<Stored<Event>> events, HashMap<String, String> roles) {
         this.name=name;
         this.events=events;
+        this.roles=roles;
     }
     
     /**
      * Post a new event to the channel.
      */
     public Channel postEvent(Stored<Event> event) {
-        return new Channel(name, List.cons(event,events));
+        return new Channel(name, List.cons(event,events), roles);
     }
     
     /**
