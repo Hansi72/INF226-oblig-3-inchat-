@@ -1,10 +1,8 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.time.Instant;
+
+import java.io.*;
+import java.sql.*;
 import java.util.UUID;
 
 import inf226.storage.*;
@@ -38,7 +36,7 @@ public final class AccountStorage
         this.channelStore = channelStore;
         
         connection.createStatement()
-                .executeUpdate("CREATE TABLE IF NOT EXISTS Account (id TEXT PRIMARY KEY, version TEXT, user TEXT, password TEXT, FOREIGN KEY(user) REFERENCES User(id) ON DELETE CASCADE)");
+                .executeUpdate("CREATE TABLE IF NOT EXISTS Account (id TEXT PRIMARY KEY, version TEXT, user TEXT, password VARBINARY(8000), salt VARBINARY(8000), FOREIGN KEY(user) REFERENCES User(id) ON DELETE CASCADE)");
         connection.createStatement()
                 .executeUpdate("CREATE TABLE IF NOT EXISTS AccountChannel (account TEXT, channel TEXT, alias TEXT, ordinal INTEGER, PRIMARY KEY(account,channel), FOREIGN KEY(account) REFERENCES Account(id) ON DELETE CASCADE, FOREIGN KEY(channel) REFERENCES Channel(id) ON DELETE CASCADE)");
     }
@@ -46,27 +44,54 @@ public final class AccountStorage
     @Override
     public Stored<Account> save(Account account)
       throws SQLException {
-        
         final Stored<Account> stored = new Stored<Account>(account);
-        String sql = 
-           "INSERT INTO Account VALUES('" + stored.identity + "','"
-                                          + stored.version  + "','"
-                                          + account.user.identity + "','"
-                                          + account.password + "')";
-        connection.createStatement().executeUpdate(sql);
-        
+
+        //serialization of password object
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        ObjectOutputStream objStream;
+        byte[] passAsBytes;
+            try {
+                objStream = new ObjectOutputStream(byteStream);
+                objStream.writeObject(account.password);
+                objStream.flush();
+                passAsBytes = byteStream.toByteArray();
+            }catch(IOException ioException){
+                ioException.printStackTrace();
+                passAsBytes = null;
+            } finally {
+                try {
+                    byteStream.close();
+                } catch (IOException ioException) {
+                    ioException.printStackTrace();
+
+                }
+            }
+
+        String sql = "INSERT INTO Account VALUES(?,?,?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, account.user.identity);
+        preparedStatement.setBytes(4, passAsBytes);
+        preparedStatement.setBytes(5,account.salt);
+        preparedStatement.executeUpdate();
+
         // Write the list of channels
         final Maybe.Builder<SQLException> exception = Maybe.builder();
         final Mutable<Integer> ordinal = new Mutable<Integer>(0);
         account.channels.forEach(element -> {
             String alias = element.first;
             Stored<Channel> channel = element.second;
-            final String msql
-              = "INSERT INTO AccountChannel VALUES('" + stored.identity + "','"
-                                                      + channel.identity + "','"
-                                                      + alias + "','"
-                                                      + ordinal.get().toString() + "')";
-            try { connection.createStatement().executeUpdate(msql); }
+
+            final String msql = "INSERT INTO AccountChannel VALUES(?,?,?,?)";
+            try {
+                PreparedStatement mpreparedStatement = connection.prepareStatement(msql);
+                mpreparedStatement.setObject(1, stored.identity);
+                mpreparedStatement.setObject(2, channel.identity);
+                mpreparedStatement.setObject(3, alias);
+                mpreparedStatement.setString(4, ordinal.get().toString());
+                mpreparedStatement.executeUpdate();
+            }
             catch (SQLException e) { exception.accept(e) ; }
             ordinal.accept(ordinal.get() + 1);
         });
@@ -135,7 +160,7 @@ public final class AccountStorage
       throws DeletedException,
              SQLException {
 
-        final String accountsql = "SELECT version,user,password FROM Account WHERE id = '" + id.toString() + "'";
+        final String accountsql = "SELECT version,user,password,salt FROM Account WHERE id = '" + id.toString() + "'";
         final String channelsql = "SELECT channel,alias,ordinal FROM AccountChannel WHERE account = '" + id.toString() + "' ORDER BY ordinal DESC";
 
         final Statement accountStatement = connection.createStatement();
@@ -148,8 +173,24 @@ public final class AccountStorage
             final UUID version = UUID.fromString(accountResult.getString("version"));
             final UUID userid =
             UUID.fromString(accountResult.getString("user"));
-            final String password =
-            accountResult.getString("password");
+            final byte[] password =
+            accountResult.getBytes("password");
+
+            //deserialize password object
+            ByteArrayInputStream byteStream = new ByteArrayInputStream(password);
+
+            ObjectInput objIn;
+            Object passAsObj;
+            try{
+                objIn = new ObjectInputStream(byteStream);
+                passAsObj = objIn.readObject();
+
+            } catch (IOException | ClassNotFoundException ioException) {
+                ioException.printStackTrace();
+                passAsObj = null;
+            }
+            final byte[] salt =
+                    accountResult.getBytes("salt");
             final Stored<User> user = userStore.get(userid);
             // Get all the channels associated with this account
             final List.Builder<Pair<String,Stored<Channel>>> channels = List.builder();
@@ -161,7 +202,8 @@ public final class AccountStorage
                     new Pair<String,Stored<Channel>>(
                         alias,channelStore.get(channelId)));
             }
-            return (new Stored<Account>(new Account(user,channels.getList(),password),id,version));
+
+            return (new Stored<Account>(new Account(user,channels.getList(),(Password)passAsObj, salt),id,version));
         } else {
             throw new DeletedException();
         }
@@ -173,12 +215,12 @@ public final class AccountStorage
     public Stored<Account> lookup(String username)
       throws DeletedException,
              SQLException {
-        final String sql = "SELECT Account.id from Account INNER JOIN User ON user=User.id where User.name='" + username + "'";
-        
-        System.err.println(sql);
-        final Statement statement = connection.createStatement();
-        
-        final ResultSet rs = statement.executeQuery(sql);
+
+        final String sql = "SELECT Account.id from Account INNER JOIN User ON user=User.id where User.name=?";
+        final PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1, username);
+
+        final ResultSet rs = preparedStatement.executeQuery();
         if(rs.next()) {
             final UUID identity = 
                     UUID.fromString(rs.getString("id"));

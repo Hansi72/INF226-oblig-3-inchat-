@@ -1,10 +1,8 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.TreeMap;
 import java.util.Map;
@@ -36,6 +34,8 @@ public final class ChannelStorage
         
         connection.createStatement()
                 .executeUpdate("CREATE TABLE IF NOT EXISTS Channel (id TEXT PRIMARY KEY, version TEXT, name TEXT)");
+        connection.createStatement()
+                .executeUpdate("CREATE TABLE IF NOT EXISTS ChannelRoles (id TEXT PRIMARY KEY, user TEXT, role TEXT)");
     }
     
     @Override
@@ -43,10 +43,22 @@ public final class ChannelStorage
       throws SQLException {
         
         final Stored<Channel> stored = new Stored<Channel>(channel);
-        String sql =  "INSERT INTO Channel VALUES('" + stored.identity + "','"
-                                                  + stored.version  + "','"
-                                                  + channel.name  + "')";
-        connection.createStatement().executeUpdate(sql);
+        String sql = "INSERT INTO Channel VALUES(?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1, stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setObject(3, channel.name);
+        preparedStatement.executeUpdate();
+
+        String rsql = "INSERT INTO ChannelRoles VALUES(?,?,?)";
+        PreparedStatement rPreparedStatement = connection.prepareStatement(rsql);
+        rPreparedStatement.setObject(1, stored.identity);
+        HashMap<String, String> roles = channel.roles;
+        for (String user : roles.keySet()){
+            rPreparedStatement.setObject(2, user);
+            rPreparedStatement.setObject(3, roles.get(user));
+            rPreparedStatement.executeUpdate();
+        }
         return stored;
     }
     
@@ -59,12 +71,23 @@ public final class ChannelStorage
         final Stored<Channel> current = get(channel.identity);
         final Stored<Channel> updated = current.newVersion(new_channel);
         if(current.version.equals(channel.version)) {
-            String sql = "UPDATE Channel SET" +
-                " (version,name) =('" 
-                                + updated.version  + "','"
-                                + new_channel.name
-                                + "') WHERE id='"+ updated.identity + "'";
-            connection.createStatement().executeUpdate(sql);
+            String sql = "UPDATE Channel SET(version, name)=(?,?) WHERE id=?";
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
+            preparedStatement.setObject(1, updated.version);
+            preparedStatement.setObject(2, new_channel.name);
+            preparedStatement.setObject(3, updated.identity);
+            preparedStatement.executeUpdate();
+
+            String rsql = "UPDATE ChannelRoles SET(user,role)=(?,?) WHERE id=?";
+            PreparedStatement rPreparedStatement = connection.prepareStatement(rsql);
+            rPreparedStatement.setObject(3, updated.identity);
+            HashMap<String, String> roles = new_channel.roles;
+            for (String user : roles.keySet()){
+                rPreparedStatement.setObject(1, user);
+                rPreparedStatement.setObject(2, roles.get(user));
+                rPreparedStatement.executeUpdate();
+            }
+
         } else {
             throw new UpdatedException(current);
         }
@@ -80,6 +103,8 @@ public final class ChannelStorage
         final Stored<Channel> current = get(channel.identity);
         if(current.version.equals(channel.version)) {
         String sql =  "DELETE FROM Channel WHERE id ='" + channel.identity + "'";
+        String rsql = "DELETE FROM ChannelRoles WHERE id ='" + channel.identity + "'";
+        connection.createStatement().executeUpdate(rsql);
         connection.createStatement().executeUpdate(sql);
         } else {
         throw new UpdatedException(current);
@@ -90,14 +115,26 @@ public final class ChannelStorage
       throws DeletedException,
              SQLException {
 
+        final String rolesql = "SELECT user,role FROM ChannelRoles WHERE id = '" + id.toString() + "'";
         final String channelsql = "SELECT version,name FROM Channel WHERE id = '" + id.toString() + "'";
         final String eventsql = "SELECT id,rowid FROM Event WHERE channel = '" + id.toString() + "' ORDER BY rowid ASC";
 
+        final Statement roleStatement = connection.createStatement();
         final Statement channelStatement = connection.createStatement();
         final Statement eventStatement = connection.createStatement();
 
+        final ResultSet roleResult = roleStatement.executeQuery(rolesql);
         final ResultSet channelResult = channelStatement.executeQuery(channelsql);
         final ResultSet eventResult = eventStatement.executeQuery(eventsql);
+
+        final HashMap<String, String> roles = new HashMap();
+        while(roleResult.next()) {
+            final String user =
+                    roleResult.getString("user");
+            final String role =
+                    roleResult.getString("role");
+            roles.put(user, role);
+        }
 
         if(channelResult.next()) {
             final UUID version = 
@@ -110,7 +147,7 @@ public final class ChannelStorage
                 final UUID eventId = UUID.fromString(eventResult.getString("id"));
                 events.accept(eventStore.get(eventId));
             }
-            return (new Stored<Channel>(new Channel(name,events.getList()),id,version));
+            return (new Stored<Channel>(new Channel(name,events.getList(), roles),id,version));
         } else {
             throw new DeletedException();
         }

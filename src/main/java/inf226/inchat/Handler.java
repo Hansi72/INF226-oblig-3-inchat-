@@ -28,6 +28,7 @@ import java.time.Instant;
 import inf226.storage.*;
 import inf226.inchat.*;
 import inf226.util.*;
+import org.owasp.encoder.Encode;
 
 /**
  * The Hanlder class handles all HTTP and HTML components.
@@ -61,6 +62,7 @@ public class Handler extends AbstractHandler
                      HttpServletResponse response)
     throws IOException, ServletException
   {
+      int csrfToken = 0;
     System.err.println("Got a request for \"" + target + "\"");
     final Map<String,Cookie> cookies = getCookies(request);
 
@@ -84,7 +86,6 @@ public class Handler extends AbstractHandler
     }
     
     // Attempt to create a session
-    
     Maybe.Builder<Stored<Session>> sessionBuilder
         = new Maybe.Builder<Stored<Session>>();
         
@@ -99,7 +100,7 @@ public class Handler extends AbstractHandler
             System.err.println("Registering user: \"" + username
                              + "\" with password \"" + password + "\"");
             
-                              
+
             inchat.register(username,password).forEach(sessionBuilder);
         } catch (Maybe.NothingException e) {
             // Not enough data suppied for login
@@ -116,7 +117,7 @@ public class Handler extends AbstractHandler
                 (request.getParameter("password"))).get();
             inchat.login(username,password).forEach(sessionBuilder);
         } catch (Maybe.NothingException e) {
-            // Not enough data suppied for login
+            // Not enough data supplied for login
             System.err.println("Broken usage of login");
         }
     
@@ -135,10 +136,14 @@ public class Handler extends AbstractHandler
     try {
         final Stored<Session> session = sessionBuilder.getMaybe().get();
         final Stored<Account> account = session.value.account;
-        // User is now logged in with a valid sesion.
+        // User is now logged in with a valid session.
         // We set the session cookie to keep the user logged in:
-        response.addCookie(new Cookie("session",session.identity.toString()));
-        
+        //todo lag anti-CSRF token her?
+        Cookie cookie = new Cookie("session",session.identity.toString());
+        cookie.setHttpOnly(true);
+        response.addCookie(cookie);
+
+
         final PrintWriter out = response.getWriter();
         // Handle a logged in request.
         try {
@@ -150,19 +155,22 @@ public class Handler extends AbstractHandler
                 Stored<Channel> channel =
                     Util.lookup(account.value.channels,alias).get();
                 if(request.getMethod().equals("POST")) {
+                    //todo sjekk om anti-CSRF token stemmer her
+
                     // This is a request to post something in the channel.
                     
                     if(request.getParameter("newmessage") != null) {
                         String message = (new Maybe<String>
                             (request.getParameter("message"))).get();
-                        channel = inchat.postMessage(account,channel,message).get();
+                        if (inchat.canPost(account, channel)) {
+                            channel = inchat.postMessage(account, channel, message).get();
+                        }
                     }
-                    
                     if(request.getParameter("deletemessage") != null) {
                         UUID messageId = 
                             UUID.fromString(Maybe.just(request.getParameter("message")).get());
                         Stored<Channel.Event> message = inchat.getEvent(messageId).get();
-                        channel = inchat.deleteEvent(channel, message);
+                            channel = inchat.deleteEvent(channel, message, account);
                     }
                     if(request.getParameter("editmessage") != null) {
                         String message = (new Maybe<String>
@@ -170,30 +178,43 @@ public class Handler extends AbstractHandler
                         UUID messageId = 
                             UUID.fromString(Maybe.just(request.getParameter("message")).get());
                         Stored<Channel.Event> event = inchat.getEvent(messageId).get();
-                        channel = inchat.editMessage(channel, event, message);
+                            channel = inchat.editMessage(channel, event, message, account);
+                    }
+                    if(request.getParameter("setpermission") != null) {
+                        String user = (new Maybe<String>
+                                (request.getParameter("username"))).get();
+                        String role = (new Maybe<String>
+                                (request.getParameter("role"))).get();
+                            channel = inchat.setRole(account, channel, user, role);
                     }
                     
-                    // TODO: Handle requests to change user roles on channel.
-                    
                 }
-                
-                out.println("<!DOCTYPE html>");
-                out.println("<html lang=\"en-GB\">");
-                printStandardHead(out, "inChat: " + alias);
-                out.println("<body>");
-                printStandardTop(out,  "inChat: " + alias);
-                out.println("<div class=\"main\">");
-                printChannelList(out, account.value, alias);
-                printChannel(out, channel, alias);
-                out.println("</div>");
-                out.println("</body>");
-                out.println("</html>");
-                response.setStatus(HttpServletResponse.SC_OK);
-                baseRequest.setHandled(true);
+
+                    out.println("<!DOCTYPE html>");
+                    out.println("<html lang=\"en-GB\">");
+                    printStandardHead(out, "inChat: " + alias);
+                    out.println("<body>");
+                    printStandardTop(out, "inChat: " + alias);
+                    out.println("<div class=\"main\">");
+                    printChannelList(out, account.value, alias);
+                    System.out.println("permission html: "+ channel.value.roles.get(account.value.user.value.name.getUserName()));
+                    if(inchat.readPermission(account, channel)) {
+                    printChannel(out, channel, alias);
+                    }else{
+                    out.println("<div class=\"main\">");
+                    out.println("You are banned from this channel.</div>");
+                    }
+                    out.println("</div>");
+                    out.println("</body>");
+                    out.println("</html>");
+                    response.setStatus(HttpServletResponse.SC_OK);
+                    baseRequest.setHandled(true);
+
                 return ;
             }
             
             if(target.startsWith("/create")) {
+                //todo sjekk om anti-CSRF token stemmer her
                 out.println("<!DOCTYPE html>");
                 out.println("<html lang=\"en-GB\">");
                 printStandardHead(out, "inChat: Create a new channel!");
@@ -214,13 +235,14 @@ public class Handler extends AbstractHandler
             if(target.equals("/joinChannel")) {
                 out.println("<!DOCTYPE html>");
                 out.println("<html lang=\"en-GB\">");
-                printStandardHead(out, "inChat: " + account.value.user.value.name);
+                printStandardHead(out, "inChat: " + account.value.user.value.name.getUserName());
                 out.println("<body>");
                 printStandardTop(out, "inChat – Join a channel!");
                 
                 out.println("<form class=\"login\" action=\"/join\" method=\"POST\">"
                   + "<div class=\"name\"><input type=\"text\" name=\"channelid\" placeholder=\"Channel ID number:\"></div>"
                   + "<div class=\"submit\"><input type=\"submit\" name=\"joinchannel\" value=\"Join channel\"></div>"
+                  + "<input type=\"hidden\" name=\"csrf_token\" value="+csrfToken+"/>" //fixme test
                   + "</form>");
                 out.println("</body>");
                 out.println("</html>");
@@ -229,12 +251,12 @@ public class Handler extends AbstractHandler
                 return ;
             }
             if(target.startsWith("/editMessage")) {
-                String alias = (new Maybe<String>
-                        (request.getParameter("channelname"))).get();
-                String messageid = (new Maybe<String>
-                        (request.getParameter("message"))).get();
-                String originalContent = (new Maybe<String>
-                        (request.getParameter("originalcontent"))).get();
+                String encAlias = Encode.forHtml((new Maybe<String>
+                        (request.getParameter("channelname"))).get());
+                String encMessageid = Encode.forHtml((new Maybe<String>
+                        (request.getParameter("message"))).get());
+                String encOriginalContent = Encode.forHtml((new Maybe<String>
+                        (request.getParameter("originalcontent"))).get());
                 out.println("<!DOCTYPE html>");
                 out.println("<html lang=\"en-GB\">");
                 printStandardHead(out, "inChat: Edit message");
@@ -242,11 +264,11 @@ public class Handler extends AbstractHandler
                 printStandardTop(out,  "inChat: Edit message");
                 out.println("<script src=\"/script.js\"></script>");
                 
-                out.println("<form class=\"entry\" action=\"/channel/" + alias + "\" method=\"post\">");
+                out.println("<form class=\"entry\" action=\"/channel/" + encAlias + "\" method=\"post\">");
                 out.println("  <div class=\"user\">You</div>");
                 out.println("  <input type=\"hidden\" name=\"editmessage\" value=\"Edit\">");
-                out.println("  <input type=\"hidden\" name=\"message\" value=\"" + messageid + "\">");
-                out.println("  <textarea id=\"messageInput\" class=\"messagebox\" placeholder=\"Post a message in this channel!\" name=\"content\">" + originalContent + "</textarea>");
+                out.println("  <input type=\"hidden\" name=\"message\" value=\"" + encMessageid + "\">");
+                out.println("  <textarea id=\"messageInput\" class=\"messagebox\" placeholder=\"Post a message in this channel!\" name=\"content\">" + encOriginalContent + "</textarea>");
                 out.println("  <div class=\"controls\"><input style=\"float: right;\" type=\"submit\" name=\"edit\" value=\"Edit\"></div>");
                 out.println("</form>");
                 out.println("<script>");
@@ -339,14 +361,12 @@ public class Handler extends AbstractHandler
                     return;
                 }
             }
-            
-            
             if(target.equals("/")) {
                 out.println("<!DOCTYPE html>");
                 out.println("<html lang=\"en-GB\">");
-                printStandardHead(out, "inChat: " + account.value.user.value.name);
+                printStandardHead(out, "inChat: " + account.value.user.value.name.getUserName());
                 out.println("<body>");
-                printStandardTop(out, "inChat: " + account.value.user.value.name);
+                printStandardTop(out, "inChat: " + account.value.user.value.name.getUserName());
                 out.println("<div class=\"main\">");
                 printChannelList(out, account.value, "");
                 out.println("<div class=\"channel\">Hello!</div>");
@@ -393,7 +413,7 @@ public class Handler extends AbstractHandler
         out.println("<style type=\"text/css\">code{white-space: pre;}</style>");
         out.println("<link rel=\"stylesheet\" href=\"/style.css\">");
         
-        out.println("<title>" + title + "</title>");
+        out.println("<title>" + Encode.forHtml(title) + "</title>");
         out.println("</head>");
     }
 
@@ -401,7 +421,7 @@ public class Handler extends AbstractHandler
      * Print the standard top with actions.
      */
     private void printStandardTop(PrintWriter out, String topic) {
-        out.println("<h1 class=\"topic\"><a style=\"color: black;\" href=\"/\">"+ topic + "</a></h1>");
+        out.println("<h1 class=\"topic\"><a style=\"color: black;\" href=\"/\">"+ Encode.forHtml(topic) + "</a></h1>");
         out.println("<div class=\"actionbar\">");
         out.println("<a class=\"action\" href=\"/create\">Create a channel!</a>");
         out.println("<a class=\"action\" href=\"/joinChannel\">Join a channel!</a>");
@@ -417,7 +437,7 @@ public class Handler extends AbstractHandler
         out.println("<p>Your channels:</p>");
         out.println("<ul class=\"chanlist\">");
         account.channels.forEach( entry -> {
-            out.println("<li> <a href=\"/channel/" + entry.first + "\">" + entry.first + "</a></li>");
+            out.println("<li> <a href=\"/channel/" + Encode.forHtml(entry.first) + "\">" + Encode.forHtml(entry.first) + "</a></li>");
         });
         out.println("</ul>");
         out.println("</aside>");
@@ -435,7 +455,7 @@ public class Handler extends AbstractHandler
         out.println("<script src=\"/script.js\"></script>");
         out.println("<script>subscribe(\"" + channel.identity +"\",\"" + channel.version + "\");</script>");
         
-        out.println("<form class=\"entry\" action=\"/channel/" + alias + "\" method=\"post\">");
+        out.println("<form class=\"entry\" action=\"/channel/" + Encode.forHtml(alias) + "\" method=\"post\">");
         out.println("  <div class=\"user\">You</div>");
         out.println("  <input type=\"hidden\" name=\"newmessage\" value=\"Send\">");
         out.println("  <textarea id=\"messageInput\" class=\"messagebox\" placeholder=\"Post a message in this channel!\" name=\"message\"></textarea>");
@@ -452,7 +472,7 @@ public class Handler extends AbstractHandler
         out.println("<h4>Channel ID:</h4><br>" + channel.identity +"<br>");
         out.println("<p><a href=\"/join?channelid=" + channel.identity + "\">Join link</a></p>");
 
-        out.println("<h4>Set permissions</h4><form action=\"/channel/" + alias + "\" method=\"post\">");
+        out.println("<h4>Set permissions</h4><form action=\"/channel/" + Encode.forHtml(alias) + "\" method=\"post\">");
         out.println("<input style=\"width: 8em;\" type=\"text\" placeholder=\"User name\" name=\"username\">");
         out.println("<select name=\"role\" required=\"required\">");
         out.println("<option value=\"owner\">Owner</option>");
@@ -484,29 +504,30 @@ public class Handler extends AbstractHandler
      * Render an event as HTML.
      */
     private Consumer<Stored<Channel.Event>> printEvent(PrintWriter out, Stored<Channel> channel) {
+        String encChannelName = Encode.forHtml(channel.value.name);
         return (e -> {
             switch(e.value.type) {
                 case message:
                     out.println("<div class=\"entry\">");
-                    out.println("    <div class=\"user\">" + e.value.sender + "</div>");
-                    out.println("    <div class=\"text\">" + e.value.message);
+                    out.println("    <div class=\"user\">" + Encode.forHtml(e.value.sender) + "</div>");
+                    out.println("    <div class=\"text\">" + Encode.forHtml(e.value.message));
                     out.println("    </div>");
                     out.println("    <div class=\"messagecontrols\">");
-                    out.println("        <form style=\"grid-area: delete;\" action=\"/channel/" + channel.value.name + "\" method=\"POST\">");
+                    out.println("        <form style=\"grid-area: delete;\" action=\"/channel/" + encChannelName + "\" method=\"POST\">");
                     out.println("        <input type=\"hidden\" name=\"message\" value=\""+ e.identity + "\">");
                     out.println("        <input type=\"submit\" name=\"deletemessage\" value=\"Delete\">");
                     out.println("        </form><form style=\"grid-area: edit;\" action=\"/editMessage\" method=\"POST\">");
                     out.println("        ");
                     out.println("        <input type=\"hidden\" name=\"message\" value=\""+ e.identity + "\">");
-                    out.println("        <input type=\"hidden\" name=\"channelname\" value=\""+ channel.value.name + "\">");
-                    out.println("        <input type=\"hidden\" name=\"originalcontent\" value=\""+ e.value.message + "\">");
+                    out.println("        <input type=\"hidden\" name=\"channelname\" value=\""+ encChannelName + "\">");
+                    out.println("        <input type=\"hidden\" name=\"originalcontent\" value=\""+ Encode.forHtml(e.value.message) + "\">");
                     out.println("        <input type=\"submit\" name=\"editmessage\" value=\"Edit\">");
                     out.println("        </form>");
                     out.println("    </div>");
                     out.println("</div>");
                     return;
                 case join:
-                    out.println("<p>" + formatter.format(e.value.time) + " " + e.value.sender + " has joined!</p>");
+                    out.println("<p>" + formatter.format(e.value.time) + " " + Encode.forHtml(e.value.sender) + " has joined!</p>");
                     return;
             }
         });

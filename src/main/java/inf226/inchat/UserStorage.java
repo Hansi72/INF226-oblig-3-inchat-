@@ -1,9 +1,6 @@
 package inf226.inchat;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -31,10 +28,16 @@ public final class UserStorage
     public Stored<User> save(User user)
       throws SQLException {
         final Stored<User> stored = new Stored<User>(user);
-        String sql =  "INSERT INTO User VALUES('" + stored.identity + "','"
-                                                  + stored.version  + "','"
-                                                  + user.name  + "','"
-                                                  + user.joined.toString() + "')";
+
+        String sql = "INSERT INTO User VALUES(?,?,?,?)";
+        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+        preparedStatement.setObject(1,stored.identity);
+        preparedStatement.setObject(2, stored.version);
+        preparedStatement.setString(3, user.name.getUserName());
+        preparedStatement.setString(4, user.joined.toString());
+        preparedStatement.executeUpdate();
+
+
         connection.createStatement().executeUpdate(sql);
         return stored;
     }
@@ -48,13 +51,15 @@ public final class UserStorage
         final Stored<User> current = get(user.identity);
         final Stored<User> updated = current.newVersion(new_user);
         if(current.version.equals(user.version)) {
-        String sql = "UPDATE User SET" +
-            " (version,name,joined) =('" 
-                            + updated.version  + "','"
-                            + new_user.name  + "','"
-                            + new_user.joined.toString()
-                            + "') WHERE id='"+ updated.identity + "'";
-            connection.createStatement().executeUpdate(sql);
+
+            final String sql = "UPDATE User SET (?,?,?) WHERE id=?";
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
+            preparedStatement.setObject(1,updated.version);
+            preparedStatement.setObject(2, new_user.name);
+            preparedStatement.setObject(3, new_user.joined.toString());
+            preparedStatement.setObject(4, updated.identity);
+            preparedStatement.executeUpdate();
+
         } else {
             throw new UpdatedException(current);
         }
@@ -98,10 +103,11 @@ public final class UserStorage
      * Look up a user by their username;
      **/
     public Maybe<Stored<User>> lookup(String name) {
-        final String sql = "SELECT id FROM User WHERE name = '" + name + "'";
+        final String sql = "SELECT id FROM User WHERE name =?";
         try{
-            final Statement statement = connection.createStatement();
-            final ResultSet rs = statement.executeQuery(sql);
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
+            preparedStatement.setString(1,name);
+            final ResultSet rs = preparedStatement.executeQuery();
             if(rs.next())
                 return Maybe.just(
                     get(UUID.fromString(rs.getString("id"))));
