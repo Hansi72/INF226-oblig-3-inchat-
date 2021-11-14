@@ -1,5 +1,6 @@
 package inf226.inchat;
 
+import inf226.util.Pair;
 import inf226.util.immutable.List;
 import inf226.storage.Stored;
 import java.time.Instant;
@@ -97,4 +98,5 @@ public final class Channel {
             return new Event(channel,time,sender,type,message);
         }
     }
+
 }

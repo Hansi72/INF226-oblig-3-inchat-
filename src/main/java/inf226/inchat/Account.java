@@ -44,6 +44,7 @@ public final class Account {
         SecureRandom rand = new SecureRandom();
         byte salt[] = new byte[32];
         rand.nextBytes(salt);
+
             Password passwordObj = new Password(password, salt, user.value.name.getUserName());
             return new Account(user, List.empty(), passwordObj, salt);
 
@@ -67,7 +68,7 @@ public final class Account {
 
 
     /**
-     * Check weather if a string is a correct password for
+     * Check whether if a string is a correct password for
      * this account.
      *
      * @return true if password matches.
@@ -82,7 +83,7 @@ public final class Account {
             }
             return Arrays.equals(hashedPassword, this.password.getPassword());
         } catch (GeneralSecurityException err) {
-            //todo
+            err.printStackTrace();
         }
         return false;
     }

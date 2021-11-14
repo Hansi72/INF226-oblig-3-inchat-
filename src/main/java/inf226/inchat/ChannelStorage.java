@@ -78,7 +78,15 @@ public final class ChannelStorage
             preparedStatement.setObject(3, updated.identity);
             preparedStatement.executeUpdate();
 
-            //todo legg til update av roles???
+            String rsql = "UPDATE ChannelRoles SET(user,role)=(?,?) WHERE id=?";
+            PreparedStatement rPreparedStatement = connection.prepareStatement(rsql);
+            rPreparedStatement.setObject(3, updated.identity);
+            HashMap<String, String> roles = new_channel.roles;
+            for (String user : roles.keySet()){
+                rPreparedStatement.setObject(1, user);
+                rPreparedStatement.setObject(2, roles.get(user));
+                rPreparedStatement.executeUpdate();
+            }
 
         } else {
             throw new UpdatedException(current);
